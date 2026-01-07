@@ -1,0 +1,18 @@
+[project]
+name = "studio-platform"
+version = "0.1.0"
+description = "POC for a studio dashboarding platform."
+authors = [
+    {name = "vipin.rai",email = "vipinrai7@gmail.com"}
+]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "psycopg2-binary (>=2.9.11,<3.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

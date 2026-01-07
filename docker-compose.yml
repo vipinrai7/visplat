@@ -1,0 +1,61 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: shotgrid_postgres
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: demodemo123
+      POSTGRES_DB: shotgrid_demo
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./00-create-metabase-db.sh:/docker-entrypoint-initdb.d/00-create-metabase-db.sh
+      - ./init.sql:/docker-entrypoint-initdb.d/01-init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d shotgrid_demo"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  metabase:
+    image: metabase/metabase:latest
+    container_name: shotgrid_metabase
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_DBNAME: metabase
+      MB_DB_PORT: 5432
+      MB_DB_USER: admin
+      MB_DB_PASS: demodemo123
+      MB_DB_HOST: postgres
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  superset:
+    build:
+      context: ./superset
+      dockerfile: Dockerfile
+    container_name: shotgrid_superset
+    environment:
+      SUPERSET_SECRET_KEY: "demo-secret-key-change-in-production"
+      ADMIN_USERNAME: admin
+      ADMIN_EMAIL: admin@demo.local
+      ADMIN_PASSWORD: admin
+    ports:
+      - "8088:8088"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: >
+      bash -c "
+        superset db upgrade &&
+        superset fab create-admin --username admin --firstname Admin --lastname User --email admin@demo.local --password admin || true &&
+        superset init &&
+        superset run -h 0.0.0.0 -p 8088 --with-threads --reload
+      "
+
+volumes:
+  postgres_data:
