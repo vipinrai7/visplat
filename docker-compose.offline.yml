@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:18-alpine
+    image: timescale/timescaledb:latest-pg18
     container_name: shotgrid_postgres
     environment:
       POSTGRES_USER: admin

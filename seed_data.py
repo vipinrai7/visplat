@@ -12,6 +12,7 @@ Structure:
 """
 
 import json
+import os
 import random
 from datetime import datetime, timedelta
 
@@ -23,11 +24,11 @@ from psycopg2.extras import execute_values
 # ===================
 
 DB_CONFIG = {
-    "host": "localhost",
-    "port": 5432,
-    "database": "shotgrid_demo",
-    "user": "admin",
-    "password": "demodemo123",
+    "host": os.environ.get("PGHOST", "localhost"),
+    "port": int(os.environ.get("PGPORT", 5432)),
+    "database": os.environ.get("PGDATABASE", "shotgrid_demo"),
+    "user": os.environ.get("PGUSER", "admin"),
+    "password": os.environ.get("PGPASSWORD", "demodemo123"),
 }
 
 # Task types (the 6 tasks per shot)
