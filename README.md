@@ -95,7 +95,7 @@ You should see:
 ✓ Inserted 180 records into raw_tasks
 ```
 
-> **Note:** The seeding tool container is built with Poetry and includes all dependencies from `pyproject.toml`. See [SEEDING_TOOL.md](SEEDING_TOOL.md) for detailed documentation.
+> **Note:** The seeding tool container is built with Poetry and includes all dependencies from `pyproject.toml`.
 
 ### 3. Access the Tools
 
