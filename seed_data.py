@@ -12,7 +12,6 @@ Structure:
 """
 
 import json
-import os
 import random
 from datetime import datetime, timedelta
 
@@ -24,11 +23,11 @@ from psycopg2.extras import execute_values
 # ===================
 
 DB_CONFIG = {
-    "host": os.getenv("PGHOST", "localhost"),
-    "port": int(os.getenv("PGPORT", "5432")),
-    "database": os.getenv("PGDATABASE", "shotgrid_demo"),
-    "user": os.getenv("PGUSER", "admin"),
-    "password": os.getenv("PGPASSWORD", "demodemo123"),
+    "host": "localhost",
+    "port": 5432,
+    "database": "shotgrid_demo",
+    "user": "admin",
+    "password": "demodemo123",
 }
 
 # Task types (the 6 tasks per shot)
@@ -311,6 +310,134 @@ def generate_tasks(shots, users):
     return tasks
 
 
+def generate_status_history(tasks, shots, users, project_id):
+    """Generate realistic status change history for TimescaleDB."""
+    history = []
+    base_date = datetime(2025, 1, 13, 9, 0, 0)  # 9 AM start
+
+    # Task status progression
+    status_flow = ["Waiting", "Ready", "In Progress", "Pending Review", "Complete"]
+
+    for task in tasks:
+        task_status = task["data"]["status"]
+        if task_status == "Waiting":
+            continue  # No history for tasks that never started
+
+        assignee_id = task["data"]["assignee_id"]
+        task_id = task["sg_id"]
+
+        # Find how far along this task is
+        current_idx = (
+            status_flow.index(task_status) if task_status in status_flow else 0
+        )
+
+        # Generate history up to current status
+        event_time = base_date + timedelta(days=random.randint(0, 5))
+
+        for i in range(current_idx + 1):
+            old_status = status_flow[i - 1] if i > 0 else None
+            new_status = status_flow[i]
+
+            history.append(
+                {
+                    "time": event_time,
+                    "entity_type": "task",
+                    "entity_id": task_id,
+                    "old_status": old_status,
+                    "new_status": new_status,
+                    "changed_by": assignee_id,
+                    "project_id": project_id,
+                }
+            )
+
+            # Add time gap between status changes
+            event_time += timedelta(hours=random.randint(4, 48))
+
+    # Add shot status history
+    shot_status_flow = [
+        "Not Started",
+        "In Progress",
+        "Pending Review",
+        "Approved",
+        "Final",
+    ]
+
+    for shot in shots:
+        shot_status = shot["data"]["status"]
+        shot_id = shot["sg_id"]
+
+        current_idx = (
+            shot_status_flow.index(shot_status)
+            if shot_status in shot_status_flow
+            else 0
+        )
+        event_time = base_date + timedelta(days=random.randint(0, 3))
+
+        for i in range(current_idx + 1):
+            old_status = shot_status_flow[i - 1] if i > 0 else None
+            new_status = shot_status_flow[i]
+
+            history.append(
+                {
+                    "time": event_time,
+                    "entity_type": "shot",
+                    "entity_id": shot_id,
+                    "old_status": old_status,
+                    "new_status": new_status,
+                    "changed_by": random.choice([u["sg_id"] for u in users]),
+                    "project_id": project_id,
+                }
+            )
+
+            event_time += timedelta(hours=random.randint(24, 72))
+
+    return history
+
+
+def generate_time_logs(tasks, project_id):
+    """Generate daily time log entries for TimescaleDB."""
+    logs = []
+    base_date = datetime(2025, 1, 13, 9, 0, 0)
+
+    for task in tasks:
+        actual_hours = task["data"]["actual_hours"]
+        if actual_hours <= 0:
+            continue
+
+        task_id = task["sg_id"]
+        assignee_id = task["data"]["assignee_id"]
+        task_type = task["data"]["task_type"]
+
+        # Split actual hours across multiple log entries (simulating daily logging)
+        remaining_hours = actual_hours
+        log_date = base_date + timedelta(days=random.randint(0, 10))
+
+        while remaining_hours > 0:
+            # Log 2-8 hours per entry
+            hours_this_entry = min(remaining_hours, random.uniform(2, 8))
+            hours_this_entry = round(hours_this_entry, 2)
+
+            logs.append(
+                {
+                    "time": log_date + timedelta(hours=random.randint(9, 17)),
+                    "task_id": task_id,
+                    "user_id": assignee_id,
+                    "hours_logged": hours_this_entry,
+                    "description": f"Work on {task_type}",
+                    "project_id": project_id,
+                }
+            )
+
+            remaining_hours -= hours_this_entry
+            log_date += timedelta(days=1)
+
+            # Skip weekends
+            if log_date.weekday() >= 5:
+                log_date += timedelta(days=2)
+
+    return logs
+
+
 # ===================
 # DATABASE INSERTION
 # ===================
@@ -337,9 +464,69 @@ def insert_data(conn, table_name, records):
     print(f"  ✓ Inserted {len(records)} records into {table_name}")
 
 
+def insert_status_history(conn, records):
+    """Insert status history into TimescaleDB hypertable."""
+    cursor = conn.cursor()
+
+    values = [
+        (
+            r["time"],
+            r["entity_type"],
+            r["entity_id"],
+            r["old_status"],
+            r["new_status"],
+            r["changed_by"],
+            r["project_id"],
+        )
+        for r in records
+    ]
+
+    query = """
+        INSERT INTO status_history
+        (time, entity_type, entity_id, old_status, new_status, changed_by, project_id)
+        VALUES %s
+    """
+
+    execute_values(cursor, query, values)
+    conn.commit()
+    cursor.close()
+
+    print(f"  ✓ Inserted {len(records)} records into status_history (hypertable)")
+
+
+def insert_time_logs(conn, records):
+    """Insert time logs into TimescaleDB hypertable."""
+    cursor = conn.cursor()
+
+    values = [
+        (
+            r["time"],
+            r["task_id"],
+            r["user_id"],
+            r["hours_logged"],
+            r["description"],
+            r["project_id"],
+        )
+        for r in records
+    ]
+
+    query = """
+        INSERT INTO time_logs
+        (time, task_id, user_id, hours_logged, description, project_id)
+        VALUES %s
+    """
+
+    execute_values(cursor, query, values)
+    conn.commit()
+    cursor.close()
+
+    print(f"  ✓ Inserted {len(records)} records into time_logs (hypertable)")
+
+
 def main():
     print("=" * 50)
     print("ShotGrid Demo Data Generator")
+    print("(with TimescaleDB time-series support)")
     print("=" * 50)
 
     # Generate all data
@@ -360,8 +547,17 @@ def main():
     tasks = generate_tasks(shots, users)
     print(f"  → {len(tasks)} tasks")
 
+    # Generate time-series data
+    print("\n  Generating time-series data...")
+
+    status_history = generate_status_history(tasks, shots, users, project["sg_id"])
+    print(f"  → {len(status_history)} status change events")
+
+    time_logs = generate_time_logs(tasks, project["sg_id"])
+    print(f"  → {len(time_logs)} time log entries")
+
     # Connect and insert
-    print("\n💾 Inserting into database...")
+    print("\n Inserting into database...")
 
     try:
         conn = psycopg2.connect(**DB_CONFIG)
@@ -372,15 +568,22 @@ def main():
         insert_data(conn, "raw_shots", shots)
         insert_data(conn, "raw_tasks", tasks)
 
+        # Insert time-series data
+        insert_status_history(conn, status_history)
+        insert_time_logs(conn, time_logs)
+
         conn.close()
 
-        print("\n✅ Demo data loaded successfully!")
-        print("\n📊 Quick Stats:")
+        print("\n Demo data loaded successfully!")
+        print("\n Quick Stats:")
         print(f"   Project: {project['data']['code']} - {project['data']['name']}")
         print(f"   Episodes: {len(episodes)}")
         print(f"   Total Shots: {len(shots)}")
         print(f"   Total Tasks: {len(tasks)}")
         print(f"   Team Size: {len(users)} artists")
+        print(f"\n  Time-Series Stats:")
+        print(f"   Status Changes: {len(status_history)}")
+        print(f"   Time Logs: {len(time_logs)}")
 
     except psycopg2.OperationalError as e:
         print(f"\n❌ Database connection failed: {e}")
