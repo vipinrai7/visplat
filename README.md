@@ -52,6 +52,35 @@ All three containers should show "Up" or "healthy".
 
 ### 2. Load Demo Data
 
+**Option A: Using Helper Scripts (Easiest)**
+
+**Windows:**
+```cmd
+seed.bat
+```
+
+**Linux/Mac:**
+```bash
+./seed.sh
+```
+
+These scripts automatically start PostgreSQL and wait for it to be ready before seeding.
+
+**Option B: Using Docker Manually**
+
+```bash
+# Ensure postgres is running
+docker-compose up -d postgres
+
+# Wait for postgres to be healthy (30-60 seconds)
+docker-compose ps
+
+# Run the containerized seeding tool
+docker-compose run --rm seeding_tool
+```
+
+**Option C: Using Local Python**
+
 ```bash
 pip install psycopg2-binary  # if not installed
 python seed_data.py
@@ -65,6 +94,8 @@ You should see:
 ✓ Inserted 30 records into raw_shots
 ✓ Inserted 180 records into raw_tasks
 ```
+
+> **Note:** The seeding tool container is built with Poetry and includes all dependencies from `pyproject.toml`. See [SEEDING_TOOL.md](SEEDING_TOOL.md) for detailed documentation.
 
 ### 3. Access the Tools
 
@@ -218,6 +249,45 @@ docker-compose down
 # Stop and DELETE all data
 docker-compose down -v
 ```
+
+---
+
+## Seeding Tool Container
+
+The project includes a containerized seeding tool that runs in an isolated environment with all dependencies managed by Poetry.
+
+### Quick Usage
+
+**Using Helper Scripts (Recommended):**
+
+```bash
+# Windows
+seed.bat
+
+# Linux/Mac
+./seed.sh
+```
+
+**Manual Docker Commands:**
+
+```bash
+# Run the seeding tool (waits for postgres to be healthy)
+docker-compose run --rm seeding_tool
+
+# Rebuild after dependency changes
+docker-compose build seeding_tool
+```
+
+### Configuration
+
+The seeding tool connects to the PostgreSQL database using environment variables (configured in `docker-compose.yml`):
+- `PGHOST=postgres` - Database host
+- `PGPORT=5432` - Database port  
+- `PGDATABASE=shotgrid_demo` - Database name
+- `PGUSER=admin` - Database user
+- `PGPASSWORD=demodemo123` - Database password
+
+For more details, see [SEEDING_TOOL.md](SEEDING_TOOL.md).
 
 ---
 
