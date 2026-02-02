@@ -1,7 +1,19 @@
 -- ============================================
 -- ShotGrid Demo Database Schema
 -- Strategy: "Lazy Loading" with JSONB + Views
+-- Now with TimescaleDB for time-series analytics
 -- ============================================
+
+-- ===================
+-- CREATE METABASE DATABASE FIRST
+-- (for Metabase's internal metadata storage)
+-- ===================
+CREATE DATABASE metabase;
+
+-- ===================
+-- ENABLE TIMESCALEDB (in shotgrid_demo context)
+-- ===================
+CREATE EXTENSION IF NOT EXISTS timescaledb;
 
 -- ===================
 -- RAW DATA TABLES (JSONB)
@@ -144,9 +156,9 @@ SELECT
     u.name AS assignee_name,
     u.department AS assignee_department,
     -- Calculated fields
-    CASE 
+    CASE
         WHEN t.bid_hours > 0 THEN ROUND((t.actual_hours / t.bid_hours) * 100, 1)
-        ELSE NULL 
+        ELSE NULL
     END AS task_efficiency_pct,
     CASE
         WHEN t.due_date < CURRENT_DATE AND t.status != 'Complete' THEN TRUE
@@ -220,3 +232,76 @@ GRANT CONNECT ON DATABASE shotgrid_demo TO read_only_user;
 GRANT USAGE ON SCHEMA public TO read_only_user;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO read_only_user;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO read_only_user;
+
+-- ===================
+-- TIMESCALEDB HYPERTABLES
+-- For time-series analytics (status changes, time logs)
+-- ===================
+
+-- Track status changes over time
+CREATE TABLE status_history (
+    time TIMESTAMPTZ NOT NULL,
+    entity_type VARCHAR(50) NOT NULL,  -- 'shot' or 'task'
+    entity_id INTEGER NOT NULL,
+    old_status VARCHAR(50),
+    new_status VARCHAR(50) NOT NULL,
+    changed_by INTEGER,  -- user_id
+    project_id INTEGER
+);
+
+-- Convert to hypertable (partitioned by time)
+SELECT create_hypertable('status_history', 'time');
+
+-- Track hours logged over time
+CREATE TABLE time_logs (
+    time TIMESTAMPTZ NOT NULL,
+    task_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    hours_logged DECIMAL(10,2) NOT NULL,
+    description TEXT,
+    project_id INTEGER
+);
+
+-- Convert to hypertable
+SELECT create_hypertable('time_logs', 'time');
+
+-- ===================
+-- TIME-SERIES VIEWS
+-- ===================
+
+-- Daily status change summary
+CREATE VIEW view_daily_status_changes AS
+SELECT
+    time_bucket('1 day', time) AS day,
+    entity_type,
+    new_status,
+    COUNT(*) AS change_count
+FROM status_history
+GROUP BY day, entity_type, new_status
+ORDER BY day DESC;
+
+-- Daily hours logged summary
+CREATE VIEW view_daily_hours AS
+SELECT
+    time_bucket('1 day', time) AS day,
+    user_id,
+    SUM(hours_logged) AS total_hours
+FROM time_logs
+GROUP BY day, user_id
+ORDER BY day DESC;
+
+-- Weekly burndown (cumulative completed tasks)
+CREATE VIEW view_weekly_burndown AS
+SELECT
+    time_bucket('1 week', time) AS week,
+    project_id,
+    COUNT(*) FILTER (WHERE new_status = 'Complete') AS tasks_completed,
+    COUNT(*) FILTER (WHERE new_status = 'In Progress') AS tasks_started
+FROM status_history
+WHERE entity_type = 'task'
+GROUP BY week, project_id
+ORDER BY week;
+
+-- Grant read access to new tables
+GRANT SELECT ON status_history TO read_only_user;
+GRANT SELECT ON time_logs TO read_only_user;
