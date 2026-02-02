@@ -9,11 +9,27 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./00-create-metabase-db.sh:/docker-entrypoint-initdb.d/00-create-metabase-db.sh
+      - postgres_shotgrid:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/01-init.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U admin -d shotgrid_demo"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres_metabase:
+    image: postgres:18-alpine
+    container_name: metabase_postgres
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: demodemo123
+      POSTGRES_DB: metabase
+    ports:
+      - "5433:5432"
+    volumes:
+      - metabase_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d metabase"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -27,11 +43,11 @@ services:
       MB_DB_PORT: 5432
       MB_DB_USER: admin
       MB_DB_PASS: demodemo123
-      MB_DB_HOST: postgres
+      MB_DB_HOST: postgres_metabase
     ports:
       - "3000:3000"
     depends_on:
-      postgres:
+      postgres_metabase:
         condition: service_healthy
 
   superset:
@@ -58,4 +74,5 @@ services:
       "
 
 volumes:
-  postgres_data:
+  postgres_shotgrid:
+  metabase_postgres_data:

@@ -1,5 +1,5 @@
 [project]
-name = "studio-platform"
+name = "visplat"
 version = "0.1.0"
 description = "POC for a studio dashboarding platform."
 authors = [

@@ -6,9 +6,21 @@ A self-contained demo environment for the Internal Data Visualization & Reportin
 
 | Component | Port | Purpose |
 |-----------|------|---------|
-| PostgreSQL 15 | 5432 | Data warehouse |
+| PostgreSQL 18 (ShotGrid) | 5432 | ShotGrid data warehouse |
+| PostgreSQL 18 (Metabase) | 5433 | Metabase metadata storage |
 | Metabase | 3000 | Coordinator dashboards (Excel-like) |
 | Apache Superset | 8088 | Executive visualizations |
+
+### Architecture Notes
+
+**Database Separation:** Metabase and ShotGrid now run on separate PostgreSQL instances with dedicated volumes:
+- `postgres_shotgrid` volume for production data
+- `metabase_postgres_data` volume for Metabase metadata
+
+This architecture ensures:
+- Clean separation of concerns
+- Independent database lifecycle management
+- No initialization conflicts between services
 
 ### Demo Data
 
@@ -73,13 +85,15 @@ You should see:
 1. Go to http://localhost:3000
 2. Click "Let's get started"
 3. Create your admin account
-4. When asked to add a database:
+4. When asked to add a database (for connecting to ShotGrid data):
    - **Database type:** PostgreSQL
    - **Host:** postgres (not localhost!)
    - **Port:** 5432
    - **Database name:** shotgrid_demo
    - **Username:** read_only_user
    - **Password:** readonly123
+
+**Note:** Metabase stores its own metadata in a separate PostgreSQL instance (`postgres_metabase` service). You only need to configure the connection to the ShotGrid database above.
 
 ### Recommended First Questions
 
@@ -146,20 +160,32 @@ These are pre-built for dashboards:
 ### Direct Connection (for testing)
 
 ```bash
-# Using psql
+# ShotGrid Database (main data)
 psql -h localhost -U admin -d shotgrid_demo
 # Password: demodemo123
 
 # Or via Docker
 docker exec -it shotgrid_postgres psql -U admin -d shotgrid_demo
+
+# Metabase Metadata Database (if needed)
+psql -h localhost -p 5433 -U admin -d metabase
+docker exec -it metabase_postgres psql -U admin -d metabase
 ```
 
 ### Connection Strings
+
+**ShotGrid Database:**
 
 | User | Use Case | Connection String |
 |------|----------|-------------------|
 | admin | Full access | `postgresql://admin:demodemo123@localhost:5432/shotgrid_demo` |
 | read_only_user | BI tools | `postgresql://read_only_user:readonly123@localhost:5432/shotgrid_demo` |
+
+**Metabase Metadata Database:**
+
+| User | Use Case | Connection String |
+|------|----------|-------------------|
+| admin | Internal use | `postgresql://admin:demodemo123@localhost:5433/metabase` |
 
 ---
 
@@ -169,9 +195,13 @@ docker exec -it shotgrid_postgres psql -U admin -d shotgrid_demo
 # Stop but keep data
 docker-compose down
 
-# Stop and DELETE all data
+# Stop and DELETE all data (removes both postgres_shotgrid and metabase_postgres_data volumes)
 docker-compose down -v
 ```
+
+**Volumes:**
+- `postgres_shotgrid`: ShotGrid production data
+- `metabase_postgres_data`: Metabase configuration and metadata
 
 ---
 
@@ -183,7 +213,18 @@ Postgres isn't ready yet. Wait 30-60 seconds after `docker-compose up`.
 
 ### Metabase shows "postgres" as host, not "localhost"
 
-This is correct! Inside Docker, containers communicate using service names. Use `postgres` when configuring from Metabase/Superset, use `localhost` when connecting from your host machine.
+This is correct! Inside Docker, containers communicate using service names:
+- Use `postgres` when configuring ShotGrid database connection from Metabase/Superset
+- Use `postgres_metabase` for Metabase's internal metadata (configured automatically)
+- Use `localhost` when connecting from your host machine
+
+### "Database metabase does not exist" error
+
+This error occurred before the database separation. If you still see this:
+1. Stop the services: `docker-compose down -v`
+2. Start fresh: `docker-compose up -d`
+
+The new architecture uses separate PostgreSQL instances, preventing this issue.
 
 ### Superset stuck on "Loading..."
 
