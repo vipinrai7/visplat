@@ -1,26 +1,16 @@
 # ShotGrid Demo Stack
 
-A self-contained demo environment for the Internal Data Visualization & Reporting Platform strategy. Includes PostgreSQL, Metabase, and Apache Superset with realistic animation production data.
+A self-contained demo environment for the Internal Data Visualization & Reporting Platform strategy. Includes TimescaleDB (PostgreSQL + time-series), Metabase, and Apache Superset with realistic animation production data.
 
 ## What's Included
 
 | Component | Port | Purpose |
 |-----------|------|---------|
-| PostgreSQL 18 (ShotGrid) | 5432 | ShotGrid data warehouse |
-| PostgreSQL 18 (Metabase) | 5433 | Metabase metadata storage |
+| TimescaleDB (PostgreSQL 15) | 5432 | Data warehouse + time-series |
 | Metabase | 3000 | Coordinator dashboards (Excel-like) |
 | Apache Superset | 8088 | Executive visualizations |
 
-### Architecture Notes
-
-**Database Separation:** Metabase and ShotGrid now run on separate PostgreSQL instances with dedicated volumes:
-- `postgres_shotgrid` volume for production data
-- `metabase_postgres_data` volume for Metabase metadata
-
-This architecture ensures:
-- Clean separation of concerns
-- Independent database lifecycle management
-- No initialization conflicts between services
+> **Note:** Superset's lean image doesn't include database drivers. We use a custom Dockerfile (`superset/Dockerfile`) that layers `psycopg2-binary` on top of the official image.
 
 ### Demo Data
 
@@ -29,6 +19,11 @@ This architecture ensures:
 - **30 Shots:** 10 per episode with frame counts, bid/actual hours
 - **180 Tasks:** Layout → Animation → FX → Lighting → Compositing → Review
 - **12 Users:** Across 6 departments
+
+### Time-Series Data (TimescaleDB Hypertables)
+
+- **Status History:** Track when shots/tasks changed status over time
+- **Time Logs:** Daily hour entries per user/task
 
 ---
 
@@ -85,15 +80,13 @@ You should see:
 1. Go to http://localhost:3000
 2. Click "Let's get started"
 3. Create your admin account
-4. When asked to add a database (for connecting to ShotGrid data):
+4. When asked to add a database:
    - **Database type:** PostgreSQL
    - **Host:** postgres (not localhost!)
    - **Port:** 5432
    - **Database name:** shotgrid_demo
    - **Username:** read_only_user
    - **Password:** readonly123
-
-**Note:** Metabase stores its own metadata in a separate PostgreSQL instance (`postgres_metabase` service). You only need to configure the connection to the ShotGrid database above.
 
 ### Recommended First Questions
 
@@ -153,6 +146,45 @@ These are pre-built for dashboards:
 | `view_department_burndown` | Burn rate by dept | Completed vs remaining |
 | `view_user_workload` | Individual capacity | Active tasks, overdue count |
 
+### TimescaleDB Time-Series Views
+
+| View | Best For | Key Columns |
+|------|----------|-------------|
+| `view_daily_status_changes` | Activity trends | day, entity_type, change_count |
+| `view_daily_hours` | Time tracking | day, user_id, total_hours |
+| `view_weekly_burndown` | Sprint progress | week, tasks_completed, tasks_started |
+
+### TimescaleDB Hypertables (Raw)
+
+| Table | Purpose | Use With |
+|-------|---------|----------|
+| `status_history` | All status change events | `time_bucket()` for aggregation |
+| `time_logs` | Individual time entries | `time_bucket()` for daily/weekly sums |
+
+#### Example TimescaleDB Queries
+
+```sql
+-- Tasks completed per day (last 30 days)
+SELECT 
+    time_bucket('1 day', time) AS day,
+    COUNT(*) AS completed
+FROM status_history
+WHERE new_status = 'Complete' 
+  AND entity_type = 'task'
+  AND time > NOW() - INTERVAL '30 days'
+GROUP BY day
+ORDER BY day;
+
+-- Cumulative hours by user per week
+SELECT 
+    time_bucket('1 week', time) AS week,
+    user_id,
+    SUM(hours_logged) AS weekly_hours
+FROM time_logs
+GROUP BY week, user_id
+ORDER BY week, user_id;
+```
+
 ---
 
 ## Database Access
@@ -160,32 +192,20 @@ These are pre-built for dashboards:
 ### Direct Connection (for testing)
 
 ```bash
-# ShotGrid Database (main data)
+# Using psql
 psql -h localhost -U admin -d shotgrid_demo
 # Password: demodemo123
 
 # Or via Docker
 docker exec -it shotgrid_postgres psql -U admin -d shotgrid_demo
-
-# Metabase Metadata Database (if needed)
-psql -h localhost -p 5433 -U admin -d metabase
-docker exec -it metabase_postgres psql -U admin -d metabase
 ```
 
 ### Connection Strings
-
-**ShotGrid Database:**
 
 | User | Use Case | Connection String |
 |------|----------|-------------------|
 | admin | Full access | `postgresql://admin:demodemo123@localhost:5432/shotgrid_demo` |
 | read_only_user | BI tools | `postgresql://read_only_user:readonly123@localhost:5432/shotgrid_demo` |
-
-**Metabase Metadata Database:**
-
-| User | Use Case | Connection String |
-|------|----------|-------------------|
-| admin | Internal use | `postgresql://admin:demodemo123@localhost:5433/metabase` |
 
 ---
 
@@ -195,13 +215,9 @@ docker exec -it metabase_postgres psql -U admin -d metabase
 # Stop but keep data
 docker-compose down
 
-# Stop and DELETE all data (removes both postgres_shotgrid and metabase_postgres_data volumes)
+# Stop and DELETE all data
 docker-compose down -v
 ```
-
-**Volumes:**
-- `postgres_shotgrid`: ShotGrid production data
-- `metabase_postgres_data`: Metabase configuration and metadata
 
 ---
 
@@ -213,18 +229,7 @@ Postgres isn't ready yet. Wait 30-60 seconds after `docker-compose up`.
 
 ### Metabase shows "postgres" as host, not "localhost"
 
-This is correct! Inside Docker, containers communicate using service names:
-- Use `postgres` when configuring ShotGrid database connection from Metabase/Superset
-- Use `postgres_metabase` for Metabase's internal metadata (configured automatically)
-- Use `localhost` when connecting from your host machine
-
-### "Database metabase does not exist" error
-
-This error occurred before the database separation. If you still see this:
-1. Stop the services: `docker-compose down -v`
-2. Start fresh: `docker-compose up -d`
-
-The new architecture uses separate PostgreSQL instances, preventing this issue.
+This is correct! Inside Docker, containers communicate using service names. Use `postgres` when configuring from Metabase/Superset, use `localhost` when connecting from your host machine.
 
 ### Superset stuck on "Loading..."
 
@@ -242,6 +247,24 @@ docker-compose up -d
 # Wait 60 seconds
 python seed_data.py
 ```
+
+### Windows: Line ending issues
+
+If you see errors like `syntax error at or near "..."` in SQL or `$'\r': command not found` in shell:
+
+1. The repo includes `.gitattributes` to enforce LF line endings
+2. If you cloned before this file existed, run:
+   ```bash
+   git config core.autocrlf false
+   git rm --cached -r .
+   git reset --hard
+   ```
+3. Or re-clone the repository
+
+### Windows: Docker Desktop requirements
+
+- Ensure Docker Desktop is running with WSL 2 backend (recommended)
+- If using Hyper-V backend, ensure you have enough memory allocated (4GB minimum)
 
 ---
 
