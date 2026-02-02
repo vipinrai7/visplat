@@ -18,36 +18,37 @@ echo [36mChecking if PostgreSQL is running...[0m
 
 REM Check if postgres container exists and is running
 docker-compose ps postgres | findstr /C:"Up" >nul 2>&1
-if errorlevel 1 (
-    echo [33mStarting PostgreSQL container...[0m
-    docker-compose up -d postgres
-    echo [33mWaiting for PostgreSQL to be ready (this may take 30-60 seconds)...[0m
+if not errorlevel 1 goto postgres_already_running
 
-    REM Wait for postgres to be healthy
-    set /a elapsed=0
-    set /a timeout=60
+echo [33mStarting PostgreSQL container...[0m
+docker-compose up -d postgres
+echo [33mWaiting for PostgreSQL to be ready (this may take 30-60 seconds)...[0m
 
-    :wait_loop
-    if !elapsed! geq !timeout! goto timeout_reached
+REM Wait for postgres to be healthy
+set /a elapsed=0
+set /a timeout=60
 
-    docker-compose ps postgres | findstr /C:"healthy" >nul 2>&1
-    if not errorlevel 1 (
-        echo [92mPostgreSQL is ready![0m
-        goto postgres_ready
-    )
+:wait_loop
+if !elapsed! geq !timeout! goto timeout_reached
 
-    timeout /t 2 /nobreak >nul
-    set /a elapsed+=2
-    echo|set /p="."
-    goto wait_loop
-
-    :timeout_reached
-    echo.
-    echo [93mPostgreSQL health check timed out, but proceeding anyway...[0m
+docker-compose ps postgres | findstr /C:"healthy" >nul 2>&1
+if not errorlevel 1 (
+    echo [92mPostgreSQL is ready![0m
     goto postgres_ready
-) else (
-    echo [92mPostgreSQL is already running[0m
 )
+
+timeout /t 2 /nobreak >nul
+set /a elapsed+=2
+echo|set /p="."
+goto wait_loop
+
+:timeout_reached
+echo.
+echo [93mPostgreSQL health check timed out, but proceeding anyway...[0m
+goto postgres_ready
+
+:postgres_already_running
+echo [92mPostgreSQL is already running[0m
 
 :postgres_ready
 echo.
