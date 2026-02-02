@@ -73,6 +73,23 @@ services:
         superset run -h 0.0.0.0 -p 8088 --with-threads --reload
       "
 
+  seeding_tool:
+    build:
+      context: .
+      dockerfile: Dockerfile.seeding
+    container_name: shotgrid_seeding_tool
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: shotgrid_demo
+      PGUSER: admin
+      PGPASSWORD: demodemo123
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - tools
+
 volumes:
   postgres_shotgrid:
   metabase_postgres_data:

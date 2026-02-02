@@ -12,8 +12,10 @@ Structure:
 """
 
 import json
+import os
 import random
 from datetime import datetime, timedelta
+
 import psycopg2
 from psycopg2.extras import execute_values
 
@@ -22,11 +24,11 @@ from psycopg2.extras import execute_values
 # ===================
 
 DB_CONFIG = {
-    "host": "localhost",
-    "port": 5432,
-    "database": "shotgrid_demo",
-    "user": "admin",
-    "password": "demodemo123"
+    "host": os.getenv("PGHOST", "localhost"),
+    "port": int(os.getenv("PGPORT", "5432")),
+    "database": os.getenv("PGDATABASE", "shotgrid_demo"),
+    "user": os.getenv("PGUSER", "admin"),
+    "password": os.getenv("PGPASSWORD", "demodemo123"),
 }
 
 # Task types (the 6 tasks per shot)
@@ -46,26 +48,54 @@ DEPARTMENTS = ["Layout", "Animation", "FX", "Lighting", "Compositing", "Producti
 # DATA GENERATORS
 # ===================
 
+
 def generate_users():
     """Generate 12 artists across departments."""
-    first_names = ["Alex", "Jordan", "Casey", "Morgan", "Taylor", "Riley",
-                   "Quinn", "Avery", "Cameron", "Drew", "Jamie", "Skyler"]
-    last_names = ["Chen", "Patel", "Kim", "Garcia", "Smith", "Johnson",
-                  "Williams", "Brown", "Jones", "Davis", "Miller", "Wilson"]
+    first_names = [
+        "Alex",
+        "Jordan",
+        "Casey",
+        "Morgan",
+        "Taylor",
+        "Riley",
+        "Quinn",
+        "Avery",
+        "Cameron",
+        "Drew",
+        "Jamie",
+        "Skyler",
+    ]
+    last_names = [
+        "Chen",
+        "Patel",
+        "Kim",
+        "Garcia",
+        "Smith",
+        "Johnson",
+        "Williams",
+        "Brown",
+        "Jones",
+        "Davis",
+        "Miller",
+        "Wilson",
+    ]
 
     users = []
     for i, (first, last) in enumerate(zip(first_names, last_names), start=1):
         dept = DEPARTMENTS[i % len(DEPARTMENTS)]
-        users.append({
-            "sg_id": 1000 + i,
-            "data": {
-                "name": f"{first} {last}",
-                "email": f"{first.lower()}.{last.lower()}@studio.local",
-                "department": dept,
-                "is_active": True
+        users.append(
+            {
+                "sg_id": 1000 + i,
+                "data": {
+                    "name": f"{first} {last}",
+                    "email": f"{first.lower()}.{last.lower()}@studio.local",
+                    "department": dept,
+                    "is_active": True,
+                },
             }
-        })
+        )
     return users
+
 
 def generate_project():
     """Generate the main project."""
@@ -76,31 +106,35 @@ def generate_project():
             "name": "Cosmos: A Space Journey",
             "status": "Active",
             "start_date": "2025-01-06",
-            "end_date": "2025-12-19"
-        }
+            "end_date": "2025-12-19",
+        },
     }
+
 
 def generate_episodes(project_id):
     """Generate 3 episodes."""
     episode_names = [
         ("EP101", "The Launch"),
         ("EP102", "First Contact"),
-        ("EP103", "The Return")
+        ("EP103", "The Return"),
     ]
 
     episodes = []
     for i, (code, name) in enumerate(episode_names, start=1):
-        episodes.append({
-            "sg_id": 200 + i,
-            "data": {
-                "project_id": project_id,
-                "code": code,
-                "name": name,
-                "status": "In Production" if i <= 2 else "Pre-Production",
-                "cut_order": i
+        episodes.append(
+            {
+                "sg_id": 200 + i,
+                "data": {
+                    "project_id": project_id,
+                    "code": code,
+                    "name": name,
+                    "status": "In Production" if i <= 2 else "Pre-Production",
+                    "cut_order": i,
+                },
             }
-        })
+        )
     return episodes
+
 
 def generate_shots(episodes):
     """Generate 10 shots per episode."""
@@ -136,23 +170,26 @@ def generate_shots(episodes):
             else:
                 actual_hours = 0
 
-            shots.append({
-                "sg_id": shot_id,
-                "data": {
-                    "episode_id": ep_id,
-                    "code": shot_code,
-                    "name": f"Shot {shot_num}",
-                    "status": status,
-                    "frame_count": frame_count,
-                    "frame_in": frame_in,
-                    "frame_out": frame_out,
-                    "bid_hours": bid_hours,
-                    "actual_hours": actual_hours,
-                    "cut_order": shot_num
+            shots.append(
+                {
+                    "sg_id": shot_id,
+                    "data": {
+                        "episode_id": ep_id,
+                        "code": shot_code,
+                        "name": f"Shot {shot_num}",
+                        "status": status,
+                        "frame_count": frame_count,
+                        "frame_in": frame_in,
+                        "frame_out": frame_out,
+                        "bid_hours": bid_hours,
+                        "actual_hours": actual_hours,
+                        "cut_order": shot_num,
+                    },
                 }
-            })
+            )
 
     return shots
+
 
 def generate_tasks(shots, users):
     """Generate 6 tasks per shot."""
@@ -174,7 +211,7 @@ def generate_tasks(shots, users):
         "FX": "FX",
         "Lighting": "Lighting",
         "Compositing": "Compositing",
-        "Review": "Production"
+        "Review": "Production",
     }
 
     base_date = datetime(2025, 1, 13)  # Project start + 1 week
@@ -191,7 +228,7 @@ def generate_tasks(shots, users):
             "FX": 0.15,
             "Lighting": 0.15,
             "Compositing": 0.20,
-            "Review": 0.05
+            "Review": 0.05,
         }
 
         # Determine task completion based on shot status
@@ -231,7 +268,10 @@ def generate_tasks(shots, users):
                 start_date = base_date + timedelta(days=start_offset)
                 due_date = start_date + timedelta(days=duration + 2)
                 completed_date = start_date + timedelta(days=duration)
-            elif task_idx == completed_tasks and shot_status in ["In Progress", "Pending Review"]:
+            elif task_idx == completed_tasks and shot_status in [
+                "In Progress",
+                "Pending Review",
+            ]:
                 task_status = "In Progress"
                 task_actual = round(task_bid * random.uniform(0.2, 0.7), 2)
                 start_offset = task_idx * 3 + random.randint(0, 2)
@@ -249,26 +289,32 @@ def generate_tasks(shots, users):
                 due_date = start_date + timedelta(days=5)
                 completed_date = None
 
-            tasks.append({
-                "sg_id": task_id,
-                "data": {
-                    "shot_id": shot_id_val,
-                    "task_type": task_type,
-                    "status": task_status,
-                    "assignee_id": assignee_id,
-                    "bid_hours": task_bid,
-                    "actual_hours": task_actual,
-                    "start_date": start_date.strftime("%Y-%m-%d"),
-                    "due_date": due_date.strftime("%Y-%m-%d"),
-                    "completed_date": completed_date.strftime("%Y-%m-%d") if completed_date else None
+            tasks.append(
+                {
+                    "sg_id": task_id,
+                    "data": {
+                        "shot_id": shot_id_val,
+                        "task_type": task_type,
+                        "status": task_status,
+                        "assignee_id": assignee_id,
+                        "bid_hours": task_bid,
+                        "actual_hours": task_actual,
+                        "start_date": start_date.strftime("%Y-%m-%d"),
+                        "due_date": due_date.strftime("%Y-%m-%d"),
+                        "completed_date": completed_date.strftime("%Y-%m-%d")
+                        if completed_date
+                        else None,
+                    },
                 }
-            })
+            )
 
     return tasks
+
 
 # ===================
 # DATABASE INSERTION
 # ===================
+
 
 def insert_data(conn, table_name, records):
     """Insert records into a raw table."""
@@ -289,6 +335,7 @@ def insert_data(conn, table_name, records):
     cursor.close()
 
     print(f"  ✓ Inserted {len(records)} records into {table_name}")
+
 
 def main():
     print("=" * 50)
@@ -341,6 +388,7 @@ def main():
         print("  docker-compose up -d")
         print("  # Wait 30 seconds for Postgres to initialize")
         print("  python seed_data.py")
+
 
 if __name__ == "__main__":
     main()
