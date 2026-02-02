@@ -412,10 +412,18 @@ def generate_time_logs(tasks, project_id):
         remaining_hours = actual_hours
         log_date = base_date + timedelta(days=random.randint(0, 10))
 
-        while remaining_hours > 0:
-            # Log 2-8 hours per entry
+        # Safety limit to prevent infinite loops
+        max_entries = 50
+        entries = 0
+
+        while remaining_hours > 0.01 and entries < max_entries:
+            # Log 2-8 hours per entry, but not more than remaining
             hours_this_entry = min(remaining_hours, random.uniform(2, 8))
             hours_this_entry = round(hours_this_entry, 2)
+
+            # Ensure we always log at least 0.01 hours to make progress
+            if hours_this_entry < 0.01:
+                hours_this_entry = remaining_hours
 
             logs.append(
                 {
@@ -430,6 +438,7 @@ def generate_time_logs(tasks, project_id):
 
             remaining_hours -= hours_this_entry
             log_date += timedelta(days=1)
+            entries += 1
 
             # Skip weekends
             if log_date.weekday() >= 5:
